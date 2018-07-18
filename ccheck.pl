@@ -116,7 +116,8 @@ my $something_wrong = ($mismatch_found || $new_files_found || $missing_files);
 if($something_wrong && $existing_checksums) {
 	$output_filename .= ".actual";
 	print "Not overwriting " . $db_filename . ", writing actual checksums to " . $output_filename . "\n";
-	print "  you might want to do: diff -u " . $db_filename . " " . $output_filename . "\n";
+	print "  you might want to: diff -u " . $db_filename . " " . $output_filename . "\n";
+	print "  if everything is OK: mv $output_filename $db_filename; rm $signature_filename; gpg --detach-sign $db_filename\n";
 }
 
 if($something_wrong || !$existing_checksums) {
