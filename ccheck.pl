@@ -1,34 +1,62 @@
 #!/usr/bin/perl
 
-# Consistency checker
+# Consistency checker for archives
 
 use strict;
 use warnings;
+
 use Digest::SHA;
 use File::Find;
 use IO::File;
+use Getopt::Long;
 
-my $alg = qw(sha256);			# SHA-256 should be enough
+my $alg = qw(sha256);			# SHA-256 should be enough.
+
+# Command-line parsing
+
+my $force = 0;
+my $verbose = 0;
+my $sign = 1;
+
+sub print_usage {
+	print STDERR "Usage: ccheck.pl [--force/-f] [--nosign] [--verbose/-v] directory\n";
+	print STDERR "\nOptions:\n";
+	print STDERR "    --force/-f: ignore existing database files and re-generate all checksums\n";
+	print STDERR "    --nosign: disable signature checking and signing (not recommended)\n";
+	print STDERR "    --verbose/-v: print a line for each checksummed file to indicate progress\n";
+	exit(1);
+}
+
+GetOptions('force' => \$force,
+		   'verbose' => \$verbose,
+		   'sign!' => \$sign)
+	or print_usage();
+
 my $db_filename = $ARGV[0];
+if(!$db_filename) { print_usage(); }
 chomp $db_filename;
-# Remove possible trailing slash:
-$db_filename =~ s#/##;
+$db_filename =~ s#/##;			# Remove possible trailing slash.
 $db_filename .= ".ccheck";
+
 my $signature_filename = $db_filename . ".sig";
-my $existing_checksums = 0;
+my $checksums_exist = 0;
 my $signature_exists = 0;
 
 if(-f $db_filename) {
-	$existing_checksums = 1;
+	$checksums_exist = 1;
 }
 
-if(-f $signature_filename) {
-	$signature_exists = 1;
+if($sign && -f $signature_filename) {
+	if($force) {
+		unlink $signature_filename;
+	} else {
+		$signature_exists = 1;
+	}
 }
 
-if($signature_exists) {
-	print "Checking signature...\n";
-	my $status = system("gpg --batch --verify $signature_filename $db_filename");
+if($sign && $signature_exists) {
+	print "Existing checksum database found, checking signature...\n";
+	my $status = system("gpg --batch --verify \"$signature_filename\" \"$db_filename\"");
 	if($status != 0) {
 		print "WARNING: invalid signature (or unable to check signature), aborting.\n";
 		exit(1);
@@ -42,7 +70,6 @@ sub read_checksums {
 	for my $line (<$input>) {
 		chomp $line;
 		my ($filename, $checksum) = ($line =~ m/^(.*)\s([^\s]+)$/);
-		# print $filename . " -> " . $checksum . "\n";
 		$checksums{$filename} = $checksum;
 	}
 	close $input;
@@ -58,69 +85,72 @@ sub compute_file_digest {
 ## if there is a checksum file, read it
 my %db_checksums;
 
-if($existing_checksums) {
+if($checksums_exist && !$force) {
 	%db_checksums = read_checksums($db_filename);
 }
-
-#print Dumper($checksums);
-#print "cs: " . $checksums->{"secrets/notes.md.gpg"} . "\n";
 
 my %actual_checksums;
 
 sub checksum_file {
 	return unless -f;
+	if($verbose) { print "Checksumming " . $_ . "\n"; }
 	my $digest = compute_file_digest($_);
 	$actual_checksums{$_} = $digest;
-	#	if($digest) {
-
-	#		print $output_fh $_ . " " . $digest . "\n";
-	#	} else {
-	#		print "no digest for " . $_ . "\n";
-	#	}
+	return;
 }
 
-print "Checksumming files...\n";
+print "Computing checksums for all files...\n";
 find({wanted => \&checksum_file, no_chdir => 1}, @ARGV);
+
+if(keys(%actual_checksums) == 0) {
+	print STDERR "No files found, exiting!\n";
+	exit(1);
+}
+
 my $mismatch_found = 0;
 my $new_files_found = 0;
 my $missing_files = 0;
 
-# check if all files exist and their checksums match
-for my $f (keys %db_checksums) {
-	if(!$actual_checksums{$f}) {
-		print "WARNING: missing file: " . $f . " " . $db_checksums{$f} . "\n";
-		$missing_files = 1;
-	} else {
-		if($actual_checksums{$f} ne $db_checksums{$f}) {
-			print "WARNING: checksum mismatch: " . $f . "\n  stored: " . $db_checksums{$f} . "\n  actual: " . $actual_checksums{$f} . "\n";
-			$mismatch_found = 1;
+if(!$force) {
+	# check if all files exist and their checksums match
+	for my $f (keys %db_checksums) {
+		if(!$actual_checksums{$f}) {
+			print "WARNING: missing file: " . $f . " " . $db_checksums{$f} . "\n";
+			$missing_files = 1;
+		} else {
+			if($actual_checksums{$f} ne $db_checksums{$f}) {
+				print "WARNING: checksum mismatch: " . $f . "\n  stored: " . $db_checksums{$f} . "\n  actual: " . $actual_checksums{$f} . "\n";
+				$mismatch_found = 1;
+			}
 		}
 	}
 }
 
-if($existing_checksums && !$mismatch_found && !$missing_files) {
+if($checksums_exist && !$mismatch_found && !$missing_files && !$force) {
 	print "All checksums OK, " . keys(%db_checksums) . " files checked.\n";
 }
 
-for my $f (keys %actual_checksums) {
-	if(!$db_checksums{$f}) {
-		print "New file: " . $f . "\n";
-		$new_files_found = 1;
+if(!$force) {
+	for my $f (keys %actual_checksums) {
+		if(!$db_checksums{$f}) {
+			print "New file: " . $f . "\n";
+			$new_files_found = 1;
+		}
 	}
 }
 
 my $output_filename = $db_filename;
 
-my $something_wrong = ($mismatch_found || $new_files_found || $missing_files);
+my $something_went_wrong = ($mismatch_found || $new_files_found || $missing_files);
 
-if($something_wrong && $existing_checksums) {
+if(!$force && $something_went_wrong && $checksums_exist) {
 	$output_filename .= ".actual";
 	print "Not overwriting " . $db_filename . ", writing actual checksums to " . $output_filename . "\n";
 	print "  you might want to: diff -u " . $db_filename . " " . $output_filename . "\n";
 	print "  if everything is OK: mv $output_filename $db_filename; rm $signature_filename; gpg --detach-sign $db_filename\n";
 }
 
-if($something_wrong || !$existing_checksums) {
+if($force || $something_went_wrong || !$checksums_exist) {
 	my $output_fh = IO::File->new(">$output_filename");
 	foreach my $f (sort keys %actual_checksums) {
 		print $output_fh $f . " " . $actual_checksums{$f} . "\n";
@@ -128,12 +158,18 @@ if($something_wrong || !$existing_checksums) {
 	close $output_fh;
 }
 
-if(!$existing_checksums || ($existing_checksums && !$something_wrong && !$signature_exists)) {
+# Either we didn't find any checksums when we started, or we did and everything went fine, but we found no
+# signature.
+if($sign && ($force || !$checksums_exist || ($checksums_exist && !$something_went_wrong && !$signature_exists))) {
 	print "Signing checksums...\n";
-	`gpg --detach-sign $output_filename`;
+	my $status = system("gpg --detach-sign \"$output_filename\"");
+	if($status != 0) {
+		print "WARNING: signing failed!\n";
+		exit(1);
+	}
 }
 
-if($mismatch_found || $new_files_found || $missing_files) {
+if($something_went_wrong) {
 	exit(1);
 } else {
 	exit(0);
