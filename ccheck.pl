@@ -12,17 +12,18 @@ use Getopt::Long;
 
 my $alg = qw(sha256);			# SHA-256 should be enough.
 
-# Command-line parsing
+# Command-line parsing and usage information
 
 my $force = 0;
 my $verbose = 0;
 my $sign = 1;
 
 sub print_usage {
+	print STDERR "ccheck.pl: Consistency checker for file archives\n\n";
 	print STDERR "Usage: ccheck.pl [--force/-f] [--nosign] [--verbose/-v] directory\n";
 	print STDERR "\nOptions:\n";
 	print STDERR "    --force/-f: ignore existing database files and re-generate all checksums\n";
-	print STDERR "    --nosign: disable signature checking and signing (not recommended)\n";
+	print STDERR "    --nosign: disable signing and ignature checking (not recommended)\n";
 	print STDERR "    --verbose/-v: print a line for each checksummed file to indicate progress\n";
 	exit(1);
 }
@@ -32,21 +33,28 @@ GetOptions('force' => \$force,
 		   'sign!' => \$sign)
 	or print_usage();
 
-my $db_filename = $ARGV[0];
-if(!$db_filename) { print_usage(); }
-chomp $db_filename;
+# Directory that we will be computing checksums for
+my $directory_name = $ARGV[0];
+if(!$directory_name) { print_usage(); }
+chomp $directory_name;
+
+# The filename of our checksum database
+my $db_filename = $directory_name;
 $db_filename =~ s#/##;			# Remove possible trailing slash.
 $db_filename .= ".ccheck";
 
-my $signature_filename = $db_filename . ".sig";
+# Do we have a checksum database next to the directory?
 my $checksums_exist = 0;
-my $signature_exists = 0;
-
 if(-f $db_filename) {
 	$checksums_exist = 1;
 }
 
+# Do we have a signature?
+my $signature_filename = $db_filename . ".sig";
+my $signature_exists = 0;
 if($sign && -f $signature_filename) {
+	# If we are forcing re-generation, we might as well remove the signature immediately. Also, in this case
+	# we do not set $signature_exists, pretending it never existed in the first place.
 	if($force) {
 		unlink $signature_filename;
 	} else {
@@ -54,6 +62,7 @@ if($sign && -f $signature_filename) {
 	}
 }
 
+# Verify the signature
 if($sign && $signature_exists) {
 	print "Existing checksum database found, checking signature...\n";
 	my $status = system("gpg --batch --verify \"$signature_filename\" \"$db_filename\"");
@@ -82,15 +91,14 @@ sub compute_file_digest {
 	return $sha->hexdigest;
 }
 
-## if there is a checksum file, read it
-my %db_checksums;
+my %db_checksums;				# Our existing checksum database.
 
+## If there is a checksum file, read it, but only if re-generation isn't forced:
 if($checksums_exist && !$force) {
 	%db_checksums = read_checksums($db_filename);
 }
 
-my %actual_checksums;
-
+my %actual_checksums;			# These will be the checksums computed from actual files.
 sub checksum_file {
 	return unless -f;
 	if($verbose) { print "Checksumming " . $_ . "\n"; }
@@ -100,7 +108,7 @@ sub checksum_file {
 }
 
 print "Computing checksums for all files...\n";
-find({wanted => \&checksum_file, no_chdir => 1}, @ARGV);
+find({wanted => \&checksum_file, no_chdir => 1}, $directory_name);
 
 if(keys(%actual_checksums) == 0) {
 	print STDERR "No files found, exiting!\n";
@@ -111,7 +119,7 @@ my $mismatch_found = 0;
 my $new_files_found = 0;
 my $missing_files = 0;
 
-if(!$force) {
+unless($force) {
 	# check if all files exist and their checksums match
 	for my $f (keys %db_checksums) {
 		if(!$actual_checksums{$f}) {
@@ -130,7 +138,7 @@ if($checksums_exist && !$mismatch_found && !$missing_files && !$force) {
 	print "All checksums OK, " . keys(%db_checksums) . " files checked.\n";
 }
 
-if(!$force) {
+unless($force) {
 	for my $f (keys %actual_checksums) {
 		if(!$db_checksums{$f}) {
 			print "New file: " . $f . "\n";
