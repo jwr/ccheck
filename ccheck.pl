@@ -1,13 +1,15 @@
 #!/usr/bin/perl
 
-# Consistency checker for archives
+## ccheck.pl: Consistency checker for file archives
+## Written by Jan Rychter <jan@rychter.com>
+## https://jan.rychter.com/
 
 use strict;
 use warnings;
 
-use Digest::SHA;
-use File::Find;
 use IO::File;
+use File::Find;
+use Digest::SHA;
 use Getopt::Long;
 
 my $alg = qw(sha256);			# SHA-256 should be enough.
