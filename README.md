@@ -1,10 +1,10 @@
 # ccheck: Consistency Checker
 
-ccheck is a simple, easy to use, minimal consistency checker. It computes checksums for collections of files (a directory and all its subdirectories), and stores them with a digital signature. Afterwards, it can verify the collection, alerting the user to any changes (file modifications, additions or deletions).
+ccheck is a simple, easy to use, minimal consistency checker. It computes checksums for collections of files (a directory and all its subdirectories), and stores them with a digital signature. Afterwards, it can verify the collection, alerting the user to any changes (file modifications, additions or deletions). SHA-256 is used for checksumming.
 
 ccheck tries to do as little as possible, delegating to other tools when needed.
 
-SHA-256 is used for checksumming.
+ccheck was written by Jan Rychter (https://jan.rychter.com/).
 
 ## Rationale
 
