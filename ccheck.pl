@@ -1,11 +1,13 @@
 #!/usr/bin/perl
 
-## ccheck.pl: Consistency checker for file archives
+## ccheck: Consistency checker for file archives
 ## Written by Jan Rychter <jan@rychter.com>
 ## https://jan.rychter.com/
 
 use strict;
 use warnings;
+
+use open qw/:std :utf8/;
 
 use IO::File;
 use File::Find;
