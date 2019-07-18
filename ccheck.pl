@@ -24,11 +24,13 @@ my $sign = 1;
 
 sub print_usage {
 	print STDERR "ccheck.pl: Consistency checker for file archives\n\n";
-	print STDERR "Usage: ccheck.pl [--force/-f] [--nosign] [--verbose/-v] directory\n";
+	print STDERR "Usage: ccheck.pl [--force/-f] [--nosign] [--verbose/-v] directory [db-name]\n";
 	print STDERR "\nOptions:\n";
 	print STDERR "    --force/-f: ignore existing database files and re-generate all checksums\n";
 	print STDERR "    --nosign: disable signing and ignature checking (not recommended)\n";
 	print STDERR "    --verbose/-v: print a line for each checksummed file to indicate progress\n";
+	print STDERR "\nIf optional db-name is supplied, it will be used as the prefix for .ccheck files,\n";
+	print STDERR "instead of directory name.\n";
 	exit(1);
 }
 
@@ -43,7 +45,7 @@ if(!$directory_name) { print_usage(); }
 chomp $directory_name;
 
 # The filename of our checksum database
-my $db_filename = $directory_name;
+my $db_filename = $ARGV[1] || $directory_name;
 $db_filename =~ s#/##;			# Remove possible trailing slash.
 $db_filename .= ".ccheck";
 
